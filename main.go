@@ -6,7 +6,7 @@ import (
 	"radikojp/hook"
 )
 
-func main() {
+func main2() {
 
 	token := "X-Radiko-AuthToken:" + hook.Auth()
 	cmd := exec.Command("ffplay", "-i", "https://c-radiko.smartstream.ne.jp/QRR/_definst_/simul-stream.stream/playlist.m3u8?station_id=QRR&l=30&lsid=5e586af5ccb3b0b2498abfb19eaa8472&type=b", "-headers", token)
