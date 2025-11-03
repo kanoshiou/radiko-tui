@@ -10,61 +10,70 @@ permissions:
 
 jobs:
   build:
-    name: Build and Release
-    runs-on: ubuntu-latest
+    name: Build
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            output: radiko-windows-amd64.exe
+          - os: ubuntu-latest
+            output: radiko-linux-amd64
+    
+    runs-on: ${{ matrix.os }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.3'
+          go-version: '1.24'
 
-      - name: Get version
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build for multiple platforms
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          # 使用 CGO_ENABLED=0 进行纯 Go 编译，避免交叉编译依赖问题
-          # oto v2 在禁用 CGO 时会使用纯 Go 实现
-          
-          # Windows AMD64
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o radiko-windows-amd64.exe
-          
-          # Windows ARM64
-          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o radiko-windows-arm64.exe
-          
-          # Linux AMD64
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o radiko-linux-amd64
-          
-          # Linux ARM64
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o radiko-linux-arm64
-          
-          # macOS AMD64
-          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o radiko-darwin-amd64
-          
-          # macOS ARM64 (Apple Silicon)
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o radiko-darwin-arm64
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev
+
+      - name: Build
+        run: go build -ldflags="-s -w" -o ${{ matrix.output }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.output }}
+          path: ${{ matrix.output }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Move artifacts to root
+        run: |
+          find artifacts -type f -exec mv {} . \;
 
       - name: Create checksums
         run: |
           sha256sum radiko-* > checksums.txt
+
+      - name: Get version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             radiko-windows-amd64.exe
-            radiko-windows-arm64.exe
             radiko-linux-amd64
-            radiko-linux-arm64
-            radiko-darwin-amd64
-            radiko-darwin-arm64
             checksums.txt
           body: |
             ## Radiko JP Player ${{ steps.get_version.outputs.VERSION }}
@@ -74,11 +83,7 @@ jobs:
             选择适合你系统的版本：
             
             - **Windows (x64)**: `radiko-windows-amd64.exe`
-            - **Windows (ARM64)**: `radiko-windows-arm64.exe`
             - **Linux (x64)**: `radiko-linux-amd64`
-            - **Linux (ARM64)**: `radiko-linux-arm64`
-            - **macOS (Intel)**: `radiko-darwin-amd64`
-            - **macOS (Apple Silicon)**: `radiko-darwin-arm64`
             
             ### ⚠️ 重要提示
             
@@ -88,11 +93,12 @@ jobs:
             - Linux: `sudo apt install ffmpeg`
             - macOS: `brew install ffmpeg`
             
-            ### 📖 文档
+            ### 🎵 音量控制
             
-            - [安装指南](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md)
-            - [使用说明](https://github.com/${{ github.repository }}/blob/main/docs/USAGE.md)
-            - [故障排除](https://github.com/${{ github.repository }}/blob/main/docs/TROUBLESHOOTING.md)
+            - 启动时设置音量：`radiko.exe --volume 80`
+            - 运行时按 ↑/↓ 调节音量
+            - 按 m 键静音/取消静音
+            - 按 0-9 快速设置音量
             
             ### ✅ 校验和
             
