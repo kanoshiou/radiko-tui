@@ -30,23 +30,26 @@ jobs:
 
       - name: Build for multiple platforms
         run: |
+          # 使用 CGO_ENABLED=0 进行纯 Go 编译，避免交叉编译依赖问题
+          # oto v2 在禁用 CGO 时会使用纯 Go 实现
+          
           # Windows AMD64
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o radiko-windows-amd64.exe
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o radiko-windows-amd64.exe
           
           # Windows ARM64
-          GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o radiko-windows-arm64.exe
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o radiko-windows-arm64.exe
           
           # Linux AMD64
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o radiko-linux-amd64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o radiko-linux-amd64
           
           # Linux ARM64
-          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o radiko-linux-arm64
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o radiko-linux-arm64
           
           # macOS AMD64
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o radiko-darwin-amd64
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o radiko-darwin-amd64
           
           # macOS ARM64 (Apple Silicon)
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o radiko-darwin-arm64
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o radiko-darwin-arm64
 
       - name: Create checksums
         run: |
