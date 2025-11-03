@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"sync"
 
-	"github.com/hajimehoshi/oto/v2"
+	"github.com/ebitengine/oto/v3"
 )
 
 // FFmpegPlayer 使用 ffmpeg 解码的播放器
@@ -19,7 +19,7 @@ type FFmpegPlayer struct {
 	cancel      context.CancelFunc
 	cmd         *exec.Cmd
 	otoContext  *oto.Context
-	otoPlayer   oto.Player
+	otoPlayer   *oto.Player
 	volume      float64 // 音量 0.0 - 1.0
 	muted       bool
 	volumeBeforeMute float64
@@ -101,13 +101,19 @@ func (p *FFmpegPlayer) Play(streamURL string) error {
 
 // initAudio 初始化音频输出
 func (p *FFmpegPlayer) initAudio(sampleRate, channelCount int) error {
+	op := &oto.NewContextOptions{
+		SampleRate:   sampleRate,
+		ChannelCount: channelCount,
+		Format:       oto.FormatSignedInt16LE,
+	}
+	
 	var ready chan struct{}
 	var err error
-	p.otoContext, ready, err = oto.NewContext(sampleRate, channelCount, oto.FormatSignedInt16LE)
+	p.otoContext, ready, err = oto.NewContext(op)
 	if err != nil {
 		return fmt.Errorf("failed to create oto context: %w", err)
 	}
-
+	
 	<-ready
 	return nil
 }
@@ -173,9 +179,7 @@ func (p *FFmpegPlayer) Stop() {
 		p.otoPlayer.Close()
 	}
 	
-	if p.otoContext != nil {
-		p.otoContext.Suspend()
-	}
+	// oto v3 会在 context 关闭时自动清理
 	
 	if p.cmd != nil && p.cmd.Process != nil {
 		p.cmd.Process.Kill()
