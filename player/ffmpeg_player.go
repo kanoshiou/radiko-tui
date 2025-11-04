@@ -73,10 +73,12 @@ func (p *FFmpegPlayer) Play(streamURL string) error {
 		return fmt.Errorf("ffmpeg not found in PATH. Please install ffmpeg: %w", err)
 	}
 
-	// 初始化音频输出
-	err = p.initAudio(48000, 2)
-	if err != nil {
-		return fmt.Errorf("failed to init audio: %w", err)
+	// 初始化音频输出（只在第一次创建）
+	if p.otoContext == nil {
+		err = p.initAudio(48000, 2)
+		if err != nil {
+			return fmt.Errorf("failed to init audio: %w", err)
+		}
 	}
 
 	// 创建 ffmpeg 命令
@@ -199,9 +201,8 @@ func (p *FFmpegPlayer) Stop() {
 	
 	if p.otoPlayer != nil {
 		p.otoPlayer.Close()
+		p.otoPlayer = nil
 	}
-	
-	// oto v3 会在 context 关闭时自动清理
 	
 	if p.cmd != nil && p.cmd.Process != nil {
 		p.cmd.Process.Kill()
