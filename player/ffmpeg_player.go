@@ -6,6 +6,7 @@ import (
 	"io"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/ebitengine/oto/v3"
 )
@@ -13,6 +14,7 @@ import (
 // FFmpegPlayer 使用 ffmpeg 解码的播放器
 type FFmpegPlayer struct {
 	authToken   string
+	streamURL   string
 	mu          sync.Mutex
 	playing     bool
 	ctx         context.Context
@@ -23,6 +25,8 @@ type FFmpegPlayer struct {
 	volume      float64 // 音量 0.0 - 1.0
 	muted       bool
 	volumeBeforeMute float64
+	lastDataTime time.Time // 最后接收数据的时间
+	onReconnect  func() string // 重连回调函数，返回新的 authToken
 }
 
 // NewFFmpegPlayer 创建 ffmpeg 播放器
@@ -45,6 +49,13 @@ func NewFFmpegPlayer(authToken string, initialVolume float64) *FFmpegPlayer {
 	}
 }
 
+// SetReconnectCallback 设置重连回调函数
+func (p *FFmpegPlayer) SetReconnectCallback(callback func() string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.onReconnect = callback
+}
+
 // Play 开始播放
 func (p *FFmpegPlayer) Play(streamURL string) error {
 	p.mu.Lock()
@@ -53,6 +64,8 @@ func (p *FFmpegPlayer) Play(streamURL string) error {
 	if p.playing {
 		return fmt.Errorf("already playing")
 	}
+	
+	p.streamURL = streamURL
 
 	// 检查 ffmpeg 是否可用
 	_, err := exec.LookPath("ffmpeg")
@@ -92,9 +105,13 @@ func (p *FFmpegPlayer) Play(streamURL string) error {
 	}
 
 	p.playing = true
+	p.lastDataTime = time.Now()
 
 	// 启动数据传输
 	go p.pumpAudio(stdout)
+	
+	// 启动监控协程
+	go p.monitorPlayback()
 
 	return nil
 }
@@ -144,6 +161,11 @@ type VolumeReader struct {
 func (vr *VolumeReader) Read(p []byte) (n int, err error) {
 	n, err = vr.reader.Read(p)
 	if n > 0 {
+		// 更新最后接收数据的时间
+		vr.player.mu.Lock()
+		vr.player.lastDataTime = time.Now()
+		vr.player.mu.Unlock()
+		
 		// 获取当前有效音量
 		volume := vr.player.getEffectiveVolume()
 		
@@ -274,4 +296,80 @@ func (p *FFmpegPlayer) getEffectiveVolume() float64 {
 		return 0
 	}
 	return p.volume
+}
+
+// monitorPlayback 监控播放状态，检测卡顿并自动重连
+func (p *FFmpegPlayer) monitorPlayback() {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+			p.mu.Lock()
+			if p.playing {
+				// 检查是否超过 10 秒没有接收到数据
+				if time.Since(p.lastDataTime) > 10*time.Second {
+					fmt.Println("\n⚠ 检测到播放卡顿，正在自动重连...")
+					p.mu.Unlock()
+					p.Reconnect()
+					continue
+				}
+			}
+			p.mu.Unlock()
+		}
+	}
+}
+
+// Reconnect 重新连接并播放
+func (p *FFmpegPlayer) Reconnect() error {
+	fmt.Println("🔄 停止当前播放...")
+	
+	// 保存当前音量设置
+	p.mu.Lock()
+	volume := p.volume
+	muted := p.muted
+	streamURL := p.streamURL
+	onReconnect := p.onReconnect
+	p.mu.Unlock()
+	
+	// 停止当前播放
+	p.Stop()
+	
+	// 等待一下确保资源释放
+	time.Sleep(500 * time.Millisecond)
+	
+	// 获取新的 auth token
+	var newAuthToken string
+	if onReconnect != nil {
+		fmt.Println("🔑 重新获取认证...")
+		newAuthToken = onReconnect()
+		if newAuthToken == "" {
+			return fmt.Errorf("failed to get new auth token")
+		}
+		fmt.Println("✓ 认证成功")
+	} else {
+		newAuthToken = p.authToken
+	}
+	
+	// 创建新的上下文
+	p.mu.Lock()
+	p.ctx, p.cancel = context.WithCancel(context.Background())
+	p.authToken = newAuthToken
+	p.volume = volume
+	p.muted = muted
+	p.mu.Unlock()
+	
+	// 重新开始播放
+	fmt.Println("▶ 重新开始播放...")
+	err := p.Play(streamURL)
+	if err != nil {
+		return fmt.Errorf("failed to restart playback: %w", err)
+	}
+	
+	fmt.Println("✓ 重连成功")
+	fmt.Println()
+	return nil
 }

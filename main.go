@@ -3,8 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/bluenviron/gohlslib/pkg/playlist"
-	"github.com/eiannone/keyboard"
 	"io"
 	"net/http"
 	"os"
@@ -13,9 +11,9 @@ import (
 	"radikojp/player"
 	"syscall"
 	"time"
-	"unsafe"
 
-	"golang.org/x/sys/windows"
+	"github.com/bluenviron/gohlslib/pkg/playlist"
+	"github.com/eiannone/keyboard"
 )
 
 func main() {
@@ -88,6 +86,11 @@ func main() {
 	fmt.Println()
 
 	ffmpegPlayer := player.NewFFmpegPlayer(authToken, initialVolume)
+	
+	// 设置重连回调函数
+	ffmpegPlayer.SetReconnectCallback(func() string {
+		return hook.Auth()
+	})
 
 	err = ffmpegPlayer.Play(streamUrl)
 	if err != nil {
@@ -122,9 +125,6 @@ func main() {
 		// 启动键盘监听
 		go handleKeyboard(ffmpegPlayer)
 
-		// 启动鼠标滚轮监听
-		go handleMouseWheel(ffmpegPlayer)
-
 		<-sigChan
 	}
 
@@ -135,10 +135,10 @@ func main() {
 
 func printControls() {
 	fmt.Println("Controls:")
-	fmt.Println("  ↑ / +         Increase volume")
-	fmt.Println("  ↓ / -         Decrease volume")
-	fmt.Println("  Mouse Wheel   Adjust volume")
+	fmt.Println("  ↑ / + / e     Increase volume")
+	fmt.Println("  ↓ / - / q     Decrease volume")
 	fmt.Println("  m             Mute/Unmute")
+	fmt.Println("  r             Reconnect/Replay")
 	fmt.Println("  0-9           Set volume to 0%-90%")
 	fmt.Println("  Ctrl+C        Stop and exit")
 	fmt.Println()
@@ -200,9 +200,24 @@ func handleKeyboard(p *player.FFmpegPlayer) {
 		case '-', '_':
 			p.DecreaseVolume(0.05)
 			needsRestart = true
+		case 'e', 'E':
+			p.IncreaseVolume(0.05)
+			needsRestart = true
+		case 'q', 'Q':
+			p.DecreaseVolume(0.05)
+			needsRestart = true
 		case 'm', 'M':
 			p.ToggleMute()
 			needsRestart = true
+		case 'r', 'R':
+			fmt.Println("\n🔄 手动重连中...")
+			go func() {
+				err := p.Reconnect()
+				if err != nil {
+					fmt.Printf("\n❌ 重连失败: %v\n", err)
+				}
+			}()
+			continue
 		case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
 			volume := float64(char-'0') / 10.0
 			p.SetVolume(volume)
@@ -212,94 +227,6 @@ func handleKeyboard(p *player.FFmpegPlayer) {
 		if needsRestart && time.Since(lastUpdate) > updateInterval {
 			printVolumeStatus(p)
 			lastUpdate = time.Now()
-		}
-	}
-}
-
-// Windows API 常量
-const (
-	WH_MOUSE_LL = 14
-	WM_MOUSEWHEEL = 0x020A
-)
-
-// MSLLHOOKSTRUCT 鼠标钩子结构
-type MSLLHOOKSTRUCT struct {
-	pt          [2]int32
-	mouseData   uint32
-	flags       uint32
-	time        uint32
-	dwExtraInfo uintptr
-}
-
-var (
-	user32           = windows.NewLazySystemDLL("user32.dll")
-	setWindowsHookEx = user32.NewProc("SetWindowsHookExW")
-	callNextHookEx   = user32.NewProc("CallNextHookEx")
-	unhookWindowsHookEx = user32.NewProc("UnhookWindowsHookEx")
-	getMessage       = user32.NewProc("GetMessageW")
-)
-
-func handleMouseWheel(p *player.FFmpegPlayer) {
-	lastUpdate := time.Now()
-	updateInterval := 50 * time.Millisecond
-
-	// 创建鼠标钩子回调
-	callback := func(nCode int, wParam uintptr, lParam uintptr) uintptr {
-		if nCode >= 0 && wParam == WM_MOUSEWHEEL {
-			mouseData := (*MSLLHOOKSTRUCT)(unsafe.Pointer(lParam))
-			delta := int16(mouseData.mouseData >> 16)
-
-			if time.Since(lastUpdate) > updateInterval {
-				if delta > 0 {
-					// 向上滚动，增加音量
-					p.IncreaseVolume(0.03)
-				} else if delta < 0 {
-					// 向下滚动，减少音量
-					p.DecreaseVolume(0.03)
-				}
-				printVolumeStatus(p)
-				lastUpdate = time.Now()
-			}
-		}
-
-		ret, _, _ := callNextHookEx.Call(0, uintptr(nCode), wParam, lParam)
-		return ret
-	}
-
-	// 设置钩子
-	hook, _, err := setWindowsHookEx.Call(
-		WH_MOUSE_LL,
-		windows.NewCallback(callback),
-		0,
-		0,
-	)
-
-	if hook == 0 {
-		fmt.Printf("Warning: Could not set mouse hook: %v\n", err)
-		return
-	}
-
-	defer unhookWindowsHookEx.Call(hook)
-
-	// 消息循环
-	var msg struct {
-		hwnd    uintptr
-		message uint32
-		wParam  uintptr
-		lParam  uintptr
-		time    uint32
-		pt      [2]int32
-	}
-
-	for {
-		ret, _, _ := getMessage.Call(
-			uintptr(unsafe.Pointer(&msg)),
-			0,
-			0,
-			0,
-		)
-		if ret == 0 {
-			break
 		}
 	}
 }
