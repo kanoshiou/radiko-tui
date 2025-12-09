@@ -9,12 +9,14 @@ import (
 )
 
 const (
-	StationListURL = "https://api.radiko.jp/program/v3/now/JP13.xml"
-	StreamURLFmt   = "https://radiko.jp/v3/station/stream/pc_html5/%s.xml"
+	StationListURLFmt = "https://api.radiko.jp/program/v3/now/%s.xml"
+	StreamURLFmt      = "https://radiko.jp/v3/station/stream/pc_html5/%s.xml"
 )
 
-func GetStations() ([]model.Station, error) {
-	resp, err := http.Get(StationListURL)
+// GetStations 获取指定地区的电台列表
+func GetStations(areaID string) ([]model.Station, error) {
+	url := fmt.Sprintf(StationListURLFmt, areaID)
+	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch station list: %w", err)
 	}

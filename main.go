@@ -35,12 +35,12 @@ func main() {
 
 	// 获取认证 token
 	fmt.Println("🔐 正在认证...")
-	authToken := hook.Auth()
+	authToken := hook.Auth(cfg.AreaID)
 	fmt.Println("✓ 认证成功")
 
 	// 获取电台列表
-	fmt.Println("📡 正在获取电台列表...")
-	stations, err := api.GetStations()
+	fmt.Printf("📡 正在获取 %s 地区电台列表...\n", cfg.AreaID)
+	stations, err := api.GetStations(cfg.AreaID)
 	if err != nil {
 		fmt.Printf("❌ 获取电台列表失败: %v\n", err)
 		os.Exit(1)

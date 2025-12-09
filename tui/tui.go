@@ -19,25 +19,27 @@ import (
 
 // KeyMap 定义快捷键
 type KeyMap struct {
-	Up        key.Binding
-	Down      key.Binding
-	Play      key.Binding
-	VolUp     key.Binding
-	VolDown   key.Binding
-	Mute      key.Binding
-	Reconnect key.Binding
-	Quit      key.Binding
+	Up         key.Binding
+	Down       key.Binding
+	Left       key.Binding
+	Right      key.Binding
+	Play       key.Binding
+	VolUp      key.Binding
+	VolDown    key.Binding
+	Mute       key.Binding
+	Reconnect  key.Binding
+	Quit       key.Binding
 }
 
 // ShortHelp 返回简短的帮助信息
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Play, k.VolUp, k.VolDown, k.Mute, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Left, k.Right, k.Play, k.VolUp, k.VolDown, k.Mute, k.Quit}
 }
 
 // FullHelp 返回详细帮助信息
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down, k.Play},
+		{k.Up, k.Down, k.Left, k.Right, k.Play},
 		{k.VolUp, k.VolDown, k.Mute},
 		{k.Reconnect, k.Quit},
 	}
@@ -52,6 +54,14 @@ var DefaultKeyMap = KeyMap{
 	Down: key.NewBinding(
 		key.WithKeys("down", "j"),
 		key.WithHelp("↓/j", "下移"),
+	),
+	Left: key.NewBinding(
+		key.WithKeys("left", "h"),
+		key.WithHelp("←/h", "上一地区"),
+	),
+	Right: key.NewBinding(
+		key.WithKeys("right", "l"),
+		key.WithHelp("→/l", "下一地区"),
 	),
 	Play: key.NewBinding(
 		key.WithKeys("enter", " "),
@@ -88,6 +98,7 @@ var (
 	textColor      = lipgloss.Color("#CDD6F4") // 浅色文字
 	dimTextColor   = lipgloss.Color("#6C7086") // 暗淡文字
 	playingColor   = lipgloss.Color("#A6E3A1") // 播放中颜色
+	regionColor    = lipgloss.Color("#89B4FA") // 地区颜色
 
 	// 标题样式
 	titleStyle = lipgloss.NewStyle().
@@ -102,6 +113,19 @@ var (
 			Foreground(dimTextColor).
 			Italic(true).
 			MarginBottom(1)
+
+	// 地区选择器样式
+	regionSelectorStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Background(regionColor).
+				Bold(true).
+				Padding(0, 2).
+				MarginBottom(1)
+
+	// 地区信息样式
+	regionInfoStyle = lipgloss.NewStyle().
+			Foreground(regionColor).
+			Bold(true)
 
 	// 电台列表容器样式
 	listContainerStyle = lipgloss.NewStyle().
@@ -161,16 +185,22 @@ var (
 	playingIndicatorStyle = lipgloss.NewStyle().
 				Foreground(playingColor).
 				Bold(true)
+
+	// 加载中样式
+	loadingStyle = lipgloss.NewStyle().
+			Foreground(accentColor).
+			Bold(true)
 )
 
 // SharedState 共享状态（使用指针在 Bubble Tea 的值传递中保持状态）
 type SharedState struct {
-	Player     *player.FFmpegPlayer
-	AuthToken  string
-	Volume     float64
-	Muted      bool
-	PlayingIdx int
-	Stations   []model.Station // 保存电台列表的引用
+	Player        *player.FFmpegPlayer
+	AuthToken     string
+	Volume        float64
+	Muted         bool
+	PlayingIdx    int
+	Stations      []model.Station // 保存电台列表的引用
+	CurrentAreaID string          // 当前地区 ID
 }
 
 // Model 是 TUI 的主模型
@@ -186,12 +216,29 @@ type Model struct {
 	shared        *SharedState // 共享状态指针
 	autoPlay      bool         // 是否需要自动播放
 	autoPlayIdx   int          // 自动播放的电台索引
+
+	// 地区相关
+	areas        []model.Area // 所有地区列表
+	currentArea  int          // 当前地区索引
+	isLoading    bool         // 是否正在加载
 }
 
 // NewModel 创建新的 TUI 模型
-func NewModel(stations []model.Station, authToken string, initialVolume float64, lastStationID string) Model {
+func NewModel(stations []model.Station, authToken string, initialVolume float64, lastStationID string, areaID string) Model {
 	h := help.New()
 	h.ShowAll = false
+
+	// 获取所有地区
+	areas := model.AllAreas()
+
+	// 找到当前地区索引
+	currentAreaIdx := 0
+	for i, area := range areas {
+		if area.ID == areaID {
+			currentAreaIdx = i
+			break
+		}
+	}
 
 	// 找到上次播放的电台索引，如果找不到则使用默认电台
 	defaultIdx := 0
@@ -222,18 +269,21 @@ func NewModel(stations []model.Station, authToken string, initialVolume float64,
 
 	// 预先创建播放器
 	p := player.NewFFmpegPlayer(authToken, initialVolume)
-	p.SetReconnectCallback(func() string {
-		return hook.Auth()
-	})
 
 	shared := &SharedState{
-		Player:     p,
-		AuthToken:  authToken,
-		Volume:     initialVolume,
-		Muted:      false,
-		PlayingIdx: -1,
-		Stations:   stations,
+		Player:        p,
+		AuthToken:     authToken,
+		Volume:        initialVolume,
+		Muted:         false,
+		PlayingIdx:    -1,
+		Stations:      stations,
+		CurrentAreaID: areaID,
 	}
+
+	// 设置重连回调，使用 shared 状态获取当前地区
+	p.SetReconnectCallback(func() string {
+		return hook.Auth(shared.CurrentAreaID)
+	})
 
 	return Model{
 		stations:      stations,
@@ -244,11 +294,20 @@ func NewModel(stations []model.Station, authToken string, initialVolume float64,
 		shared:        shared,
 		autoPlay:      true,
 		autoPlayIdx:   autoPlayIdx,
+		areas:         areas,
+		currentArea:   currentAreaIdx,
+		isLoading:     false,
 	}
 }
 
 // autoPlayMsg 自动播放消息
 type autoPlayMsg struct{}
+
+// stationsLoadedMsg 电台加载完成消息
+type stationsLoadedMsg struct {
+	stations []model.Station
+	err      error
+}
 
 // Init 初始化 - 触发自动播放
 func (m Model) Init() tea.Cmd {
@@ -275,7 +334,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case stationsLoadedMsg:
+		m.isLoading = false
+		if msg.err != nil {
+			m.errorMessage = fmt.Sprintf("❌ 加载电台失败: %v", msg.err)
+		} else {
+			m.stations = msg.stations
+			m.shared.Stations = msg.stations
+			m.shared.CurrentAreaID = m.getCurrentAreaID() // 更新当前地区 ID
+			m.cursor = 0
+			m.shared.PlayingIdx = -1 // 重置播放状态
+			m.statusMessage = fmt.Sprintf("✓ 已切换到 %s，共 %d 个电台", m.getCurrentAreaName(), len(m.stations))
+			// 保存地区配置
+			m.saveAreaConfig()
+		}
+		return m, nil
+
 	case tea.KeyMsg:
+		// 如果正在加载，忽略按键
+		if m.isLoading {
+			return m, nil
+		}
+
 		// 清除错误信息
 		m.errorMessage = ""
 
@@ -289,6 +369,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Down):
 			if m.cursor < len(m.stations)-1 {
 				m.cursor++
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.Left):
+			// 切换到上一个地区
+			if m.currentArea > 0 {
+				m.currentArea--
+				return m, m.loadStationsForCurrentArea()
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.Right):
+			// 切换到下一个地区
+			if m.currentArea < len(m.areas)-1 {
+				m.currentArea++
+				return m, m.loadStationsForCurrentArea()
 			}
 			return m, nil
 
@@ -375,6 +471,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// getCurrentAreaID 获取当前地区 ID
+func (m *Model) getCurrentAreaID() string {
+	if m.currentArea >= 0 && m.currentArea < len(m.areas) {
+		return m.areas[m.currentArea].ID
+	}
+	return "JP13"
+}
+
+// getCurrentAreaName 获取当前地区名称
+func (m *Model) getCurrentAreaName() string {
+	if m.currentArea >= 0 && m.currentArea < len(m.areas) {
+		return m.areas[m.currentArea].Name
+	}
+	return "東京"
+}
+
+// loadStationsForCurrentArea 为当前地区加载电台
+func (m *Model) loadStationsForCurrentArea() tea.Cmd {
+	m.isLoading = true
+	m.statusMessage = fmt.Sprintf("⏳ 正在加载 %s 的电台...", m.getCurrentAreaName())
+	areaID := m.getCurrentAreaID()
+
+	return func() tea.Msg {
+		stations, err := api.GetStations(areaID)
+		return stationsLoadedMsg{stations: stations, err: err}
+	}
+}
+
 // saveConfig 保存配置
 func (m *Model) saveConfig() {
 	if m.shared.PlayingIdx >= 0 && m.shared.PlayingIdx < len(m.stations) {
@@ -383,9 +507,25 @@ func (m *Model) saveConfig() {
 		if m.shared.Player != nil {
 			volume = m.shared.Player.GetVolume()
 		}
+		areaID := m.getCurrentAreaID()
 		// 异步保存，不阻塞 UI
-		go config.SaveLastStation(stationID, volume)
+		go config.SaveConfig(stationID, volume, areaID)
 	}
+}
+
+// saveAreaConfig 保存地区配置（不需要正在播放的电台）
+func (m *Model) saveAreaConfig() {
+	areaID := m.getCurrentAreaID()
+	volume := m.shared.Volume
+	if m.shared.Player != nil {
+		volume = m.shared.Player.GetVolume()
+	}
+	// 使用当前电台 ID 或空字符串
+	stationID := ""
+	if m.shared.PlayingIdx >= 0 && m.shared.PlayingIdx < len(m.stations) {
+		stationID = m.stations[m.shared.PlayingIdx].ID
+	}
+	go config.SaveConfig(stationID, volume, areaID)
 }
 
 // playResultMsg 播放结果消息
@@ -457,13 +597,24 @@ func (m Model) View() string {
 	subtitle := subtitleStyle.Render("日本广播电台播放器")
 	b.WriteString(subtitle + "\n\n")
 
+	// 地区选择器
+	regionSelector := m.renderRegionSelector()
+	b.WriteString(regionSelector + "\n\n")
+
+	// 如果正在加载
+	if m.isLoading {
+		loadingText := loadingStyle.Render(fmt.Sprintf("⏳ 正在加载 %s 的电台...", m.getCurrentAreaName()))
+		b.WriteString(loadingText + "\n")
+		return b.String()
+	}
+
 	// 电台列表
 	var stationItems []string
 
 	// 计算可见的电台数量（根据窗口高度）
 	maxVisible := 15
 	if m.height > 0 {
-		maxVisible = m.height - 12 // 留出空间给其他元素
+		maxVisible = m.height - 14 // 留出空间给其他元素（增加了地区选择器）
 		if maxVisible < 5 {
 			maxVisible = 5
 		}
@@ -567,6 +718,42 @@ func (m Model) View() string {
 	return b.String()
 }
 
+// renderRegionSelector 渲染地区选择器
+func (m Model) renderRegionSelector() string {
+	var parts []string
+
+	// 左箭头
+	if m.currentArea > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(regionColor).Render("◀ "))
+	} else {
+		parts = append(parts, "  ")
+	}
+
+	// 当前地区信息
+	currentArea := m.areas[m.currentArea]
+	region := model.FindRegionByAreaID(currentArea.ID)
+	var regionName string
+	if region != nil {
+		regionName = region.Name
+	}
+
+	areaInfo := fmt.Sprintf("📍 %s (%s) - %s", currentArea.Name, currentArea.ID, regionName)
+	parts = append(parts, regionSelectorStyle.Render(areaInfo))
+
+	// 右箭头
+	if m.currentArea < len(m.areas)-1 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(regionColor).Render(" ▶"))
+	} else {
+		parts = append(parts, "  ")
+	}
+
+	// 地区计数
+	countInfo := fmt.Sprintf("  [%d/%d]", m.currentArea+1, len(m.areas))
+	parts = append(parts, lipgloss.NewStyle().Foreground(dimTextColor).Render(countInfo))
+
+	return strings.Join(parts, "")
+}
+
 // renderVolumeBar 渲染音量条
 func (m Model) renderVolumeBar() string {
 	vol := int(m.shared.Volume * 100)
@@ -598,7 +785,7 @@ func (m Model) renderVolumeBar() string {
 
 // Run 运行 TUI
 func Run(stations []model.Station, authToken string, cfg config.Config) error {
-	m := NewModel(stations, authToken, cfg.Volume, cfg.LastStationID)
+	m := NewModel(stations, authToken, cfg.Volume, cfg.LastStationID, cfg.AreaID)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 
