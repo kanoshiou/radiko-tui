@@ -34,7 +34,7 @@
 
 **Solutions**:
 - Check your internet connection
-- The program auto-reconnects after 10 seconds
+- The program auto-reconnects after 5 seconds
 - Press `r` to manually reconnect
 - Try a different network
 

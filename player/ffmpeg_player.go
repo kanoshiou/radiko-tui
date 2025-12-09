@@ -313,7 +313,7 @@ func (p *FFmpegPlayer) getEffectiveVolume() float64 {
 
 // monitorPlayback monitors playback status (silent version, no terminal output)
 func (p *FFmpegPlayer) monitorPlayback() {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -323,7 +323,7 @@ func (p *FFmpegPlayer) monitorPlayback() {
 		case <-ticker.C:
 			p.mu.Lock()
 			if p.playing {
-				if time.Since(p.lastDataTime) > 10*time.Second {
+				if time.Since(p.lastDataTime) > 5*time.Second {
 					p.reconnectStatus = ReconnectStarted
 					p.mu.Unlock()
 					p.Reconnect()
