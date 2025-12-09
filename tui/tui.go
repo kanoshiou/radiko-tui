@@ -563,7 +563,7 @@ func (m *Model) playStation() tea.Cmd {
 			return playResultMsg{err: fmt.Errorf("利用可能なストリームがありません"), stationIdx: stationIdx}
 		}
 
-		lsid := "5e586af5ccb3b0b2498abfb19eaa8472"
+		lsid := model.GenLsid()
 		lastUrl := playlistURLs[len(playlistURLs)-1]
 		finalStreamUrl := fmt.Sprintf("%s?station_id=%s&l=30&lsid=%s&type=b", lastUrl, station.ID, lsid)
 

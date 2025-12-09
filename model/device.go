@@ -293,6 +293,11 @@ func NewRandomDeviceInfo(appVersion, userID, userAgent, device string) RandomDev
 	}
 }
 
+// GenLsid generates a random 32-character hexadecimal lsid for stream URLs
+func GenLsid() string {
+	return genRandomHexString(32)
+}
+
 // genRandomHexString generates a random hexadecimal string of specified length
 func genRandomHexString(length int) string {
 	const hex = "0123456789abcdef"
