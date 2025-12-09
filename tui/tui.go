@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"radikojp/api"
+	"radikojp/config"
 	"radikojp/hook"
 	"radikojp/model"
 	"radikojp/player"
@@ -169,6 +170,7 @@ type SharedState struct {
 	Volume     float64
 	Muted      bool
 	PlayingIdx int
+	Stations   []model.Station // 保存电台列表的引用
 }
 
 // Model 是 TUI 的主模型
@@ -182,20 +184,40 @@ type Model struct {
 	statusMessage string
 	errorMessage  string
 	shared        *SharedState // 共享状态指针
+	autoPlay      bool         // 是否需要自动播放
+	autoPlayIdx   int          // 自动播放的电台索引
 }
 
 // NewModel 创建新的 TUI 模型
-func NewModel(stations []model.Station, authToken string, initialVolume float64) Model {
+func NewModel(stations []model.Station, authToken string, initialVolume float64, lastStationID string) Model {
 	h := help.New()
 	h.ShowAll = false
 
-	// 找到 QRR 电台的索引作为默认选中项
+	// 找到上次播放的电台索引，如果找不到则使用默认电台
 	defaultIdx := 0
+	autoPlayIdx := -1
 	for i, s := range stations {
-		if s.ID == "QRR" {
+		if s.ID == lastStationID {
 			defaultIdx = i
+			autoPlayIdx = i
 			break
 		}
+	}
+
+	// 如果没有找到上次的电台，尝试 QRR 作为默认
+	if autoPlayIdx == -1 {
+		for i, s := range stations {
+			if s.ID == "QRR" {
+				defaultIdx = i
+				autoPlayIdx = i
+				break
+			}
+		}
+	}
+
+	// 如果还是没找到，使用第一个电台
+	if autoPlayIdx == -1 && len(stations) > 0 {
+		autoPlayIdx = 0
 	}
 
 	// 预先创建播放器
@@ -210,6 +232,7 @@ func NewModel(stations []model.Station, authToken string, initialVolume float64)
 		Volume:     initialVolume,
 		Muted:      false,
 		PlayingIdx: -1,
+		Stations:   stations,
 	}
 
 	return Model{
@@ -217,14 +240,22 @@ func NewModel(stations []model.Station, authToken string, initialVolume float64)
 		cursor:        defaultIdx,
 		keys:          DefaultKeyMap,
 		help:          h,
-		statusMessage: "按 Enter 开始播放...",
+		statusMessage: "⏳ 正在自动连接...",
 		shared:        shared,
+		autoPlay:      true,
+		autoPlayIdx:   autoPlayIdx,
 	}
 }
 
-// Init 初始化
+// autoPlayMsg 自动播放消息
+type autoPlayMsg struct{}
+
+// Init 初始化 - 触发自动播放
 func (m Model) Init() tea.Cmd {
-	return nil
+	// 返回一个命令来触发自动播放
+	return func() tea.Msg {
+		return autoPlayMsg{}
+	}
 }
 
 // Update 处理消息
@@ -233,6 +264,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		return m, nil
+
+	case autoPlayMsg:
+		// 处理自动播放
+		if m.autoPlay && m.autoPlayIdx >= 0 && m.autoPlayIdx < len(m.stations) {
+			m.autoPlay = false
+			m.cursor = m.autoPlayIdx
+			return m, m.playStation()
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -261,6 +301,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.shared.Player.IncreaseVolume(0.05)
 				m.shared.Volume = m.shared.Player.GetVolume()
 				m.shared.Muted = false
+				// 保存音量
+				m.saveConfig()
 			}
 			return m, nil
 
@@ -269,6 +311,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.shared.Player.DecreaseVolume(0.05)
 				m.shared.Volume = m.shared.Player.GetVolume()
 				m.shared.Muted = false
+				// 保存音量
+				m.saveConfig()
 			}
 			return m, nil
 
@@ -287,6 +331,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Quit):
+			// 退出前保存配置
+			m.saveConfig()
 			if m.shared.Player != nil {
 				m.shared.Player.Stop()
 			}
@@ -299,6 +345,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.shared.Player.SetVolume(vol)
 				m.shared.Volume = vol
 				m.shared.Muted = false
+				// 保存音量
+				m.saveConfig()
 			}
 			return m, nil
 		}
@@ -310,6 +358,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.shared.PlayingIdx = msg.stationIdx
 			m.statusMessage = "🎵 正在播放..."
+			// 保存当前播放的电台
+			m.saveConfig()
 		}
 		return m, nil
 
@@ -323,6 +373,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// saveConfig 保存配置
+func (m *Model) saveConfig() {
+	if m.shared.PlayingIdx >= 0 && m.shared.PlayingIdx < len(m.stations) {
+		stationID := m.stations[m.shared.PlayingIdx].ID
+		volume := m.shared.Volume
+		if m.shared.Player != nil {
+			volume = m.shared.Player.GetVolume()
+		}
+		// 异步保存，不阻塞 UI
+		go config.SaveLastStation(stationID, volume)
+	}
 }
 
 // playResultMsg 播放结果消息
@@ -534,8 +597,8 @@ func (m Model) renderVolumeBar() string {
 }
 
 // Run 运行 TUI
-func Run(stations []model.Station, authToken string, initialVolume float64) error {
-	m := NewModel(stations, authToken, initialVolume)
+func Run(stations []model.Station, authToken string, cfg config.Config) error {
+	m := NewModel(stations, authToken, cfg.Volume, cfg.LastStationID)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 

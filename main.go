@@ -6,21 +6,31 @@ import (
 	"os"
 
 	"radikojp/api"
+	"radikojp/config"
 	"radikojp/hook"
 	"radikojp/tui"
 )
 
 func main() {
 	// 解析命令行参数
-	volumePercent := flag.Int("volume", 80, "Initial volume (0-100)")
+	volumePercent := flag.Int("volume", -1, "Initial volume (0-100), -1 means use saved config")
 	flag.Parse()
 
-	// 转换为 0.0-1.0 范围
-	initialVolume := float64(*volumePercent) / 100.0
-	if initialVolume < 0 {
-		initialVolume = 0
-	} else if initialVolume > 1 {
-		initialVolume = 1
+	// 加载配置
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Printf("⚠ 加载配置失败，使用默认配置: %v\n", err)
+		cfg = config.DefaultConfig()
+	}
+
+	// 如果命令行指定了音量，则覆盖配置
+	if *volumePercent >= 0 {
+		cfg.Volume = float64(*volumePercent) / 100.0
+		if cfg.Volume < 0 {
+			cfg.Volume = 0
+		} else if cfg.Volume > 1 {
+			cfg.Volume = 1
+		}
 	}
 
 	// 获取认证 token
@@ -42,9 +52,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 显示上次播放的电台
+	if cfg.LastStationID != "" {
+		fmt.Printf("📻 上次播放: %s\n", cfg.LastStationID)
+	}
+
 	// 运行 TUI
-	fmt.Println("� 启动界面...")
-	err = tui.Run(stations, authToken, initialVolume)
+	fmt.Println("🚀 启动界面...")
+	err = tui.Run(stations, authToken, cfg)
 	if err != nil {
 		fmt.Printf("❌ 界面错误: %v\n", err)
 		os.Exit(1)
