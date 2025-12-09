@@ -10,7 +10,7 @@ type StationConfig struct {
 	StationID string
 }
 
-// Predefined station list
+// Stations Predefined station list
 var Stations = map[string]StationConfig{
 	"QRR": {
 		Name:      "文化放送",
