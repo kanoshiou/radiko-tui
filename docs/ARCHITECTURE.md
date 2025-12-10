@@ -5,38 +5,41 @@
 ```
 radikojp/
 ├── .github/
+│   ├── dependabot.yml            # Dependabot configuration
 │   └── workflows/
-│       └── release.yml       # GitHub Actions auto-release
+│       ├── go-version-check.yml  # Go version compatibility check
+│       └── release.yml           # GitHub Actions auto-release
 ├── api/
-│   ├── auth.go               # Radiko authentication module
-│   └── client.go             # Radiko API client
+│   ├── auth.go                   # Radiko authentication module
+│   └── client.go                 # Radiko API client
 ├── config/
-│   └── config.go             # Configuration management
-├── docs/                     # Documentation directory
-│   ├── INSTALL.md            # Installation guide
-│   ├── USAGE.md              # Usage guide
-│   ├── TROUBLESHOOTING.md    # Troubleshooting
-│   └── ARCHITECTURE.md       # Architecture (this file)
+│   └── config.go                 # Configuration management
+├── docs/                         # Documentation directory
+│   ├── ARCHITECTURE.md           # Architecture (this file)
+│   ├── INSTALL.md                # Installation guide
+│   ├── TROUBLESHOOTING.md        # Troubleshooting
+│   └── USAGE.md                  # Usage guide
 ├── model/
-│   ├── authtoken.go          # Auth token model
-│   ├── device.go             # Device info and GPS generation
-│   ├── program.go            # Program data models
-│   ├── region.go             # Region/Area definitions
-│   └── station.go            # Station data models
+│   ├── authtoken.go              # Auth token model
+│   ├── device.go                 # Device info and GPS generation
+│   ├── program.go                # Program data models
+│   ├── region.go                 # Region/Area definitions
+│   └── station.go                # Station data models
 ├── player/
-│   └── ffmpeg_player.go      # FFmpeg-based audio player
+│   └── ffmpeg_player.go          # FFmpeg-based audio player
 ├── tui/
-│   └── tui.go                # Terminal UI (bubbletea)
-├── main.go                   # Main program entry
-├── version.go                # Version information
-├── config.example.go         # Configuration example
-├── go.mod                    # Go module definition
-├── Makefile                  # Build script
-├── README.md                 # Project description (English)
-├── README.ja.md              # Project description (Japanese)
-├── README.zh.md              # Project description (Chinese)
-└── LICENSE                   # MIT License
+│   └── tui.go                    # Terminal UI (bubbletea)
+├── main.go                       # Main program entry
+├── config.example.go             # Configuration example
+├── go.mod                        # Go module definition
+├── go.sum                        # Go dependencies checksum
+├── Makefile                      # Build script
+├── README.md                     # Project description (English)
+├── README.ja.md                  # Project description (Japanese)
+├── README.zh.md                  # Project description (Chinese)
+└── LICENSE                       # MIT License
 ```
+
 
 ## Technical Architecture
 
