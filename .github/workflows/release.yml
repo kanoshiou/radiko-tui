@@ -140,8 +140,8 @@ jobs:
             ### 💾 Configuration
             
             Settings are saved automatically:
-            - **Windows**: `%APPDATA%\radikojp\config.json`
-            - **Linux/macOS**: `~/.config/radikojp/config.json`
+            - **Windows**: `%APPDATA%\radiko-tui\config.json`
+            - **Linux/macOS**: `~/.config/radiko-tui/config.json`
             
             ### ✅ Checksums
             

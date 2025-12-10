@@ -10,20 +10,20 @@
 
 ### Option 1: Download Pre-built Binary (Recommended)
 
-1. Go to [Releases](https://github.com/kanoshiou/radikojp/releases)
+1. Go to [Releases](https://github.com/kanoshiou/radiko-tui/releases)
 2. Download the appropriate file for your OS:
-   - Windows: `radikojp-windows-amd64.exe`
-   - Linux: `radikojp-linux-amd64`
-   - macOS: `radikojp-darwin-amd64`
-3. Make it executable (Linux/macOS): `chmod +x radikojp-*`
+   - Windows: `radiko-tui-windows-amd64.exe`
+   - Linux: `radiko-tui-linux-amd64`
+   - macOS: `radiko-tui-darwin-amd64`
+3. Make it executable (Linux/macOS): `chmod +x radiko-tui-*`
 4. Run the program
 
 ### Option 2: Build from Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/kanoshiou/radikojp.git
-cd radikojp
+git clone https://github.com/kanoshiou/radiko-tui.git
+cd radiko-tui
 
 # Install dependencies
 go mod tidy

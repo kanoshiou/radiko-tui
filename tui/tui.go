@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"radikojp/api"
-	"radikojp/config"
-	"radikojp/model"
-	"radikojp/player"
+	"radiko-tui/api"
+	"radiko-tui/config"
+	"radiko-tui/model"
+	"radiko-tui/player"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"

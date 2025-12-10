@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"radikojp/model"
+	"radiko-tui/model"
 )
 
 type authInfo struct {

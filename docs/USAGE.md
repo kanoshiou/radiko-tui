@@ -104,8 +104,8 @@ The program automatically saves:
 - Selected region
 
 Configuration file location:
-- **Windows**: `%APPDATA%\radikojp\config.json`
-- **Linux/macOS**: `~/.config/radikojp/config.json`
+- **Windows**: `%APPDATA%\radiko-tui\config.json`
+- **Linux/macOS**: `~/.config/radiko-tui/config.json`
 
 ### Config File Format
 

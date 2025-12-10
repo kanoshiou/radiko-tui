@@ -32,7 +32,7 @@ func getConfigPath() (string, error) {
 	}
 
 	// Create application config directory
-	appConfigDir := filepath.Join(configDir, "radikojp")
+	appConfigDir := filepath.Join(configDir, "radiko-tui")
 	if err := os.MkdirAll(appConfigDir, 0755); err != nil {
 		return "", err
 	}

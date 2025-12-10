@@ -4,9 +4,9 @@
 
 A Radiko Japanese internet radio player written in Go with an interactive TUI.
 
-[![Release](https://img.shields.io/github/v/release/kanoshiou/radikojp)](https://github.com/kanoshiou/radikojp/releases)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/kanoshiou/radikojp)](https://go.dev/)
-[![License](https://img.shields.io/github/license/kanoshiou/radikojp)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/kanoshiou/radiko-tui)](https://github.com/kanoshiou/radiko-tui/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/kanoshiou/radiko-tui)](https://go.dev/)
+[![License](https://img.shields.io/github/license/kanoshiou/radiko-tui)](LICENSE)
 
 ## ✨ Features
 
@@ -36,13 +36,13 @@ A Radiko Japanese internet radio player written in Go with an interactive TUI.
 
 ### Download Pre-built Binary (Recommended)
 
-Download from [Releases](https://github.com/kanoshiou/radikojp/releases).
+Download from [Releases](https://github.com/kanoshiou/radiko-tui/releases).
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/kanoshiou/radikojp.git
-cd radikojp
+git clone https://github.com/kanoshiou/radiko-tui.git
+cd radiko-tui
 go mod tidy
 go build -o radiko
 ```

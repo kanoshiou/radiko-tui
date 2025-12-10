@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"radikojp/api"
-	"radikojp/config"
-	"radikojp/tui"
+	"radiko-tui/api"
+	"radiko-tui/config"
+	"radiko-tui/tui"
 )
 
 func main() {

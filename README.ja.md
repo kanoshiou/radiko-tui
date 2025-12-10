@@ -4,9 +4,9 @@
 
 インタラクティブなTUIを備えた、Goで書かれたRadiko日本インターネットラジオプレーヤーです。
 
-[![Release](https://img.shields.io/github/v/release/kanoshiou/radikojp)](https://github.com/kanoshiou/radikojp/releases)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/kanoshiou/radikojp)](https://go.dev/)
-[![License](https://img.shields.io/github/license/kanoshiou/radikojp)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/kanoshiou/radiko-tui)](https://github.com/kanoshiou/radiko-tui/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/kanoshiou/radiko-tui)](https://go.dev/)
+[![License](https://img.shields.io/github/license/kanoshiou/radiko-tui)](LICENSE)
 
 ## ✨ 機能
 
@@ -36,13 +36,13 @@
 
 ### ビルド済みバイナリのダウンロード（推奨）
 
-[Releases](https://github.com/kanoshiou/radikojp/releases) からダウンロードしてください。
+[Releases](https://github.com/kanoshiou/radiko-tui/releases) からダウンロードしてください。
 
 ### ソースからビルド
 
 ```bash
-git clone https://github.com/kanoshiou/radikojp.git
-cd radikojp
+git clone https://github.com/kanoshiou/radiko-tui.git
+cd radiko-tui
 go mod tidy
 go build -o radiko
 ```

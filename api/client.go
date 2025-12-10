@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"radikojp/model"
+	"radiko-tui/model"
 )
 
 const (

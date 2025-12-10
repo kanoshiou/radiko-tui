@@ -92,8 +92,8 @@ go build
 **Solutions**:
 1. Check audio device is connected
 2. Delete config file and restart:
-   - Windows: `del %APPDATA%\radikojp\config.json`
-   - Linux/macOS: `rm ~/.config/radikojp/config.json`
+   - Windows: `del %APPDATA%\radiko-tui\config.json`
+   - Linux/macOS: `rm ~/.config/radiko-tui/config.json`
 
 ### High CPU usage
 
@@ -128,7 +128,7 @@ sw_vers
 
 If you can't solve your issue:
 
-1. Check existing [GitHub Issues](https://github.com/kanoshiou/radikojp/issues)
+1. Check existing [GitHub Issues](https://github.com/kanoshiou/radiko-tui/issues)
 2. Create a new issue with:
    - OS and version
    - ffmpeg version

@@ -3,7 +3,7 @@
 ## Project Structure
 
 ```
-radikojp/
+radiko-tui/
 ├── .github/
 │   ├── dependabot.yml            # Dependabot configuration
 │   └── workflows/
@@ -176,8 +176,8 @@ oto Library → Audio Output
 ## Configuration Storage
 
 Config file location:
-- **Windows**: `%APPDATA%\radikojp\config.json`
-- **Linux/macOS**: `~/.config/radikojp/config.json`
+- **Windows**: `%APPDATA%\radiko-tui\config.json`
+- **Linux/macOS**: `~/.config/radiko-tui/config.json`
 
 ## Performance
 
