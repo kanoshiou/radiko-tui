@@ -35,6 +35,7 @@ type KeyMap struct {
 	VolDown   key.Binding
 	Mute      key.Binding
 	Reconnect key.Binding
+	Record    key.Binding
 	Quit      key.Binding
 }
 
@@ -59,6 +60,7 @@ var DefaultKeyMap = KeyMap{
 	VolDown:   key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "音量-")),
 	Mute:      key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "ミュート")),
 	Reconnect: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "再接続")),
+	Record:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "録音")),
 	Quit:      key.NewBinding(key.WithKeys("ctrl+c", "esc"), key.WithHelp("Esc", "終了/戻る")),
 }
 
@@ -72,6 +74,7 @@ var (
 	playingColor   = lipgloss.Color("#A6E3A1")
 	regionColor    = lipgloss.Color("#89B4FA")
 	warningColor   = lipgloss.Color("#FAB387")
+	recordingColor = lipgloss.Color("#F38BA8")
 
 	titleStyle                  = lipgloss.NewStyle().Foreground(primaryColor).Bold(true)
 	regionItemStyle             = lipgloss.NewStyle().Foreground(textColor)
@@ -89,6 +92,7 @@ var (
 	programStyle                = lipgloss.NewStyle().Foreground(lipgloss.Color("#CBA6F7"))
 	nowPlayingStyle             = lipgloss.NewStyle().Foreground(playingColor).Bold(true)
 	reconnectStyle              = lipgloss.NewStyle().Foreground(warningColor)
+	recordingStyle              = lipgloss.NewStyle().Foreground(recordingColor).Bold(true)
 )
 
 // PlayingInfo holds information about the currently playing station
@@ -396,9 +400,26 @@ func (m Model) handleStationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case key.Matches(msg, m.keys.Record):
+		if m.shared.Player != nil && m.shared.Playing != nil {
+			started, filePath, err := m.shared.Player.ToggleRecording(m.shared.Playing.StationName)
+			if err != nil {
+				m.errorMessage = err.Error()
+			} else if started {
+				m.statusMessage = "録音開始"
+			} else {
+				m.statusMessage = fmt.Sprintf("録音保存: %s", filePath)
+			}
+		}
+		return m, nil
+
 	case key.Matches(msg, m.keys.Quit):
 		m.saveConfig()
 		if m.shared.Player != nil {
+			// Stop recording if active
+			if m.shared.Player.IsRecording() {
+				m.shared.Player.StopRecording()
+			}
 			m.shared.Player.Stop()
 		}
 		return m, tea.Quit
@@ -743,20 +764,38 @@ func (m Model) renderFooter() string {
 			case player.ReconnectPlaying:
 				playLine += "  " + reconnectStyle.Render("▶ 再生を再開中...")
 			}
+
+			// Check recording status
+			if m.shared.Player.IsRecording() {
+				_, duration, recordingStation := m.shared.Player.GetRecordingInfo()
+				mins := int(duration.Minutes())
+				secs := int(duration.Seconds()) % 60
+				// Check if recording station is different from playing station
+				if m.shared.Playing != nil && recordingStation != m.shared.Playing.StationName {
+					playLine += "  " + recordingStyle.Render(fmt.Sprintf("⏺ 録音中[%s] %02d:%02d", recordingStation, mins, secs))
+				} else {
+					playLine += "  " + recordingStyle.Render(fmt.Sprintf("⏺ 録音中 %02d:%02d", mins, secs))
+				}
+			}
 		}
 	} else {
 		playLine = statusStyle.Render("再生していません")
 	}
 	lines = append(lines, playLine)
 
-	// Help
+	// Help - change "s 録音" to "s 停止" when recording
+	isRecording := m.shared.Player != nil && m.shared.Player.IsRecording()
 	switch m.focus {
 	case FocusVolume:
 		lines = append(lines, statusStyle.Render("← → 音量調整  m ミュート  ↓ 地域へ  Esc 戻る"))
 	case FocusRegion:
 		lines = append(lines, statusStyle.Render("← → 選択  Enter 確定  ↑ 音量へ  ↓/Esc 戻る"))
 	default:
-		lines = append(lines, statusStyle.Render("↑↓ 選択  Enter 再生  ←→ 地域切替  +- 音量  m ミュート  r 再接続  Esc 終了"))
+		if isRecording {
+			lines = append(lines, statusStyle.Render("↑↓ 選択  Enter 再生  ←→ 地域切替  +- 音量  m ミュート  ")+recordingStyle.Render("s 停止")+statusStyle.Render("  r 再接続  Esc 終了"))
+		} else {
+			lines = append(lines, statusStyle.Render("↑↓ 選択  Enter 再生  ←→ 地域切替  +- 音量  m ミュート  s 録音  r 再接続  Esc 終了"))
+		}
 	}
 
 	return strings.Join(lines, "\n")

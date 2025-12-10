@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +44,15 @@ type FFmpegPlayer struct {
 	onReconnect      func() string
 	reconnectStatus  ReconnectStatus // Reconnection status (for TUI to query)
 	lastError        string          // Last error message
+
+	// Recording related fields
+	recording       bool
+	recordCmd       *exec.Cmd
+	recordCtx       context.Context
+	recordCancel    context.CancelFunc
+	recordFilePath  string
+	recordStation   string
+	recordStartTime time.Time
 }
 
 // NewFFmpegPlayer creates a new ffmpeg player
@@ -388,4 +400,126 @@ func (p *FFmpegPlayer) Reconnect() error {
 	p.mu.Unlock()
 
 	return nil
+}
+
+// getDownloadsDir returns the user's Downloads directory
+func getDownloadsDir() string {
+	var homeDir string
+	homeDir = os.Getenv("USERPROFILE")
+	return filepath.Join(homeDir, "Downloads")
+}
+
+// StartRecording starts recording the current stream to a file
+func (p *FFmpegPlayer) StartRecording(stationName string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if !p.playing {
+		return fmt.Errorf("再生中でないと録音できません")
+	}
+
+	if p.recording {
+		return fmt.Errorf("既に録音中です")
+	}
+
+	// Create filename with timestamp
+	now := time.Now()
+	timestamp := now.Format("20060102_150405")
+	safeName := stationName
+	// Remove invalid characters for filename
+	for _, char := range []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|", " "} {
+		safeName = strings.ReplaceAll(safeName, char, "_")
+	}
+	filename := fmt.Sprintf("radiko_%s_%s.aac", safeName, timestamp)
+	downloadDir := getDownloadsDir()
+
+	// Ensure downloads directory exists
+	if err := os.MkdirAll(downloadDir, 0755); err != nil {
+		return fmt.Errorf("ダウンロードフォルダの作成に失敗しました: %w", err)
+	}
+
+	p.recordFilePath = filepath.Join(downloadDir, filename)
+	p.recordStation = stationName
+	p.recordStartTime = now
+
+	// Create context for recording
+	p.recordCtx, p.recordCancel = context.WithCancel(context.Background())
+
+	// Start ffmpeg for recording
+	p.recordCmd = exec.CommandContext(p.recordCtx, "ffmpeg",
+		"-headers", fmt.Sprintf("X-Radiko-AuthToken: %s", p.authToken),
+		"-i", p.streamURL,
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-y",
+		"-loglevel", "error",
+		p.recordFilePath,
+	)
+
+	err := p.recordCmd.Start()
+	if err != nil {
+		p.recordCancel()
+		return fmt.Errorf("録音の開始に失敗しました: %w", err)
+	}
+
+	p.recording = true
+	return nil
+}
+
+// StopRecording stops the current recording
+func (p *FFmpegPlayer) StopRecording() (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if !p.recording {
+		return "", fmt.Errorf("録音していません")
+	}
+
+	filePath := p.recordFilePath
+
+	// Cancel the recording context to stop ffmpeg
+	if p.recordCancel != nil {
+		p.recordCancel()
+	}
+
+	// Wait for the command to finish
+	if p.recordCmd != nil && p.recordCmd.Process != nil {
+		p.recordCmd.Wait()
+	}
+
+	p.recording = false
+	p.recordCmd = nil
+	p.recordFilePath = ""
+	p.recordStation = ""
+
+	return filePath, nil
+}
+
+// IsRecording returns whether recording is in progress
+func (p *FFmpegPlayer) IsRecording() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.recording
+}
+
+// GetRecordingInfo returns information about the current recording
+func (p *FFmpegPlayer) GetRecordingInfo() (filePath string, duration time.Duration, stationName string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if !p.recording {
+		return "", 0, ""
+	}
+
+	return p.recordFilePath, time.Since(p.recordStartTime), p.recordStation
+}
+
+// ToggleRecording toggles recording on/off
+func (p *FFmpegPlayer) ToggleRecording(stationName string) (started bool, filePath string, err error) {
+	if p.IsRecording() {
+		filePath, err = p.StopRecording()
+		return false, filePath, err
+	}
+	err = p.StartRecording(stationName)
+	return true, "", err
 }
