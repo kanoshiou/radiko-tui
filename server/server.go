@@ -6,14 +6,50 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
 	"radiko-tui/api"
 	"radiko-tui/model"
 )
+
+// getRealIP extracts the real client IP from the request.
+// It checks headers in the following priority order:
+// 1. CF-Connecting-IP (Cloudflare)
+// 2. X-Real-IP (nginx)
+// 3. X-Forwarded-For (standard proxy, first IP in the list)
+// 4. RemoteAddr (fallback)
+func getRealIP(r *http.Request) string {
+	// Cloudflare: CF-Connecting-IP is the most reliable when using Cloudflare
+	if cfIP := r.Header.Get("CF-Connecting-IP"); cfIP != "" {
+		return cfIP
+	}
+
+	// nginx: X-Real-IP is typically set by nginx
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		return realIP
+	}
+
+	// Standard proxy: X-Forwarded-For can contain multiple IPs (client, proxy1, proxy2, ...)
+	// The first IP is the original client
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		ips := strings.Split(xff, ",")
+		if len(ips) > 0 {
+			return strings.TrimSpace(ips[0])
+		}
+	}
+
+	// Fallback: use RemoteAddr (strip port if present)
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr // Return as-is if parsing fails
+	}
+	return ip
+}
 
 // Server represents the HTTP streaming server
 type Server struct {
@@ -58,7 +94,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // handlePlayRequest routes different HTTP methods
 func (s *Server) handlePlayRequest(w http.ResponseWriter, r *http.Request) {
 	stationID := r.PathValue("stationID")
-	log.Printf("📥 リクエスト: %s %s (from %s)", r.Method, r.URL.Path, r.RemoteAddr)
+	clientIP := getRealIP(r)
+	log.Printf("📥 リクエスト: %s %s (from %s)", r.Method, r.URL.Path, clientIP)
 
 	switch r.Method {
 	case http.MethodHead:
@@ -89,7 +126,8 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request, stationID st
 		return
 	}
 
-	clientID := fmt.Sprintf("%s-%d", r.RemoteAddr, time.Now().UnixNano())
+	clientIP := getRealIP(r)
+	clientID := fmt.Sprintf("%s-%d", clientIP, time.Now().UnixNano())
 	log.Printf("🎵 クライアント接続: %s → %s", clientID, stationID)
 
 	// Set headers
