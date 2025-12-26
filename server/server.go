@@ -98,17 +98,28 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 
 // streamAudio streams audio from Radiko to the HTTP response
 func (s *Server) streamAudio(clientCtx context.Context, w http.ResponseWriter, streamURL, authToken string) error {
-	// Set headers for audio streaming
+	// Set comprehensive headers for audio streaming compatibility
 	w.Header().Set("Content-Type", "audio/aac")
-	w.Header().Set("Cache-Control", "no-cache, no-store")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("Accept-Ranges", "none")
+	// ICY headers for better media player compatibility
+	w.Header().Set("icy-name", "Radiko Stream")
+	w.Header().Set("icy-genre", "Radio")
+	w.Header().Set("icy-pub", "1")
 
 	// Create a cancellable context for ffmpeg (not tied to client request initially)
 	ffmpegCtx, ffmpegCancel := context.WithCancel(context.Background())
 	defer ffmpegCancel()
 
-	// Create ffmpeg command
+	// Create ffmpeg command with reconnect options for HLS streams
 	cmd := exec.CommandContext(ffmpegCtx, "ffmpeg",
+		"-reconnect", "1",
+		"-reconnect_streamed", "1",
+		"-reconnect_delay_max", "5",
 		"-headers", fmt.Sprintf("X-Radiko-AuthToken: %s", authToken),
 		"-i", streamURL,
 		"-c:a", "copy", // Copy AAC without re-encoding
@@ -145,8 +156,8 @@ func (s *Server) streamAudio(clientCtx context.Context, w http.ResponseWriter, s
 		ffmpegCancel() // Cancel ffmpeg when client disconnects
 	}()
 
-	// Stream audio to response
-	buf := make([]byte, 4096)
+	// Stream audio to response with larger buffer for stability
+	buf := make([]byte, 16384) // Increased buffer size for better streaming
 	for {
 		n, readErr := stdout.Read(buf)
 		if n > 0 {
@@ -157,7 +168,7 @@ func (s *Server) streamAudio(clientCtx context.Context, w http.ResponseWriter, s
 				break
 			}
 
-			// Flush if possible
+			// Flush immediately to reduce latency
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
