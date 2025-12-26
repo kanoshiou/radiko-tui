@@ -6,6 +6,7 @@
 
 [![Release](https://img.shields.io/github/v/release/kanoshiou/radiko-tui)](https://github.com/kanoshiou/radiko-tui/releases)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kanoshiou/radiko-tui)](https://go.dev/)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/kanoshiou/radiko-tui/pkgs/container/radiko-tui)
 [![License](https://img.shields.io/github/license/kanoshiou/radiko-tui)](LICENSE)
 
 ## ✨ 功能特性
@@ -62,6 +63,41 @@ go build -tags noaudio -o radiko-server
 ```
 
 此构建排除音频播放依赖（oto），仅支持服务器模式（`-server` 参数）。
+
+### Docker（推荐用于服务器模式）
+
+从 GitHub Container Registry 拉取：
+
+```bash
+docker pull ghcr.io/kanoshiou/radiko-tui:latest
+```
+
+使用 Docker 运行：
+
+```bash
+docker run -d --name radiko -p 8080:8080 ghcr.io/kanoshiou/radiko-tui:latest
+```
+
+自定义端口和保留时间：
+
+```bash
+docker run -d --name radiko -p 9000:9000 ghcr.io/kanoshiou/radiko-tui:latest \
+  -server -port 9000 -grace 60
+```
+
+Docker Compose：
+
+```yaml
+version: '3.8'
+services:
+  radiko:
+    image: ghcr.io/kanoshiou/radiko-tui:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - TZ=Asia/Tokyo
+    restart: unless-stopped
+```
 
 ## ⚠️ 依赖要求
 

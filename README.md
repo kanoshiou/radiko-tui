@@ -6,6 +6,7 @@ A Terminal User Interface (TUI) for streaming Radiko Japanese internet radio, wr
 
 [![Release](https://img.shields.io/github/v/release/kanoshiou/radiko-tui)](https://github.com/kanoshiou/radiko-tui/releases)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kanoshiou/radiko-tui)](https://go.dev/)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/kanoshiou/radiko-tui/pkgs/container/radiko-tui)
 [![License](https://img.shields.io/github/license/kanoshiou/radiko-tui)](LICENSE)
 
 ## ✨ Features
@@ -62,6 +63,41 @@ go build -tags noaudio -o radiko-server
 ```
 
 This build excludes audio playback dependencies (oto) and only supports server mode (`-server` flag).
+
+### Docker (Recommended for Server Mode)
+
+Pull from GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/kanoshiou/radiko-tui:latest
+```
+
+Run with Docker:
+
+```bash
+docker run -d --name radiko -p 8080:8080 ghcr.io/kanoshiou/radiko-tui:latest
+```
+
+Custom port and grace period:
+
+```bash
+docker run -d --name radiko -p 9000:9000 ghcr.io/kanoshiou/radiko-tui:latest \
+  -server -port 9000 -grace 60
+```
+
+Docker Compose:
+
+```yaml
+version: '3.8'
+services:
+  radiko:
+    image: ghcr.io/kanoshiou/radiko-tui:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - TZ=Asia/Tokyo
+    restart: unless-stopped
+```
 
 ## ⚠️ Requirements
 
