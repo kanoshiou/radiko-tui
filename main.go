@@ -16,11 +16,12 @@ func main() {
 	volumePercent := flag.Int("volume", -1, "Initial volume (0-100), -1 means use saved config")
 	serverMode := flag.Bool("server", false, "Run in server mode (HTTP streaming)")
 	port := flag.Int("port", 8080, "Server port (server mode only)")
+	graceSeconds := flag.Int("grace", 10, "Seconds to keep ffmpeg alive after last client disconnects (server mode only)")
 	flag.Parse()
 
 	// Server mode
 	if *serverMode {
-		runServer(*port)
+		runServer(*port, *graceSeconds)
 		return
 	}
 
@@ -29,9 +30,9 @@ func main() {
 }
 
 // runServer starts the HTTP streaming server
-func runServer(port int) {
+func runServer(port int, graceSeconds int) {
 	fmt.Println("🚀 サーバーモードで起動中...")
-	s := server.NewServer(port)
+	s := server.NewServer(port, graceSeconds)
 	if err := s.Start(); err != nil {
 		fmt.Printf("❌ サーバーエラー: %v\n", err)
 		os.Exit(1)
