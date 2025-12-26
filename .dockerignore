@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Build artifacts
+*.exe
+radiko-tui
+radiko-server
+
+# Documentation
+*.md
+docs/
+demo/
+LICENSE
+
+# GitHub
+.github/
+
+# Agent
+.agent/
+
+# Local config
+config.json
