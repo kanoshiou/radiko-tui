@@ -131,28 +131,57 @@ func (p *HTTPPlayer) pumpAudio(reader io.Reader) {
 	<-p.ctx.Done()
 }
 
-// HTTPVolumeReader wraps io.Reader and applies volume control
+// HTTPVolumeReader wraps io.Reader and applies volume control with frame alignment
 type HTTPVolumeReader struct {
-	reader io.Reader
-	player *HTTPPlayer
+	reader  io.Reader
+	player  *HTTPPlayer
+	residue []byte // Buffer for incomplete PCM frames
 }
 
 func (vr *HTTPVolumeReader) Read(p []byte) (n int, err error) {
+	// PCM frame size: 2 bytes per sample * 2 channels = 4 bytes per frame
+	const frameSize = 4
+
+	// Read data from network
 	n, err = vr.reader.Read(p)
 	if n > 0 {
 		vr.player.mu.Lock()
 		vr.player.lastDataTime = time.Now()
 		vr.player.mu.Unlock()
 
-		volume := vr.player.getEffectiveVolume()
+		// Combine with any residue from previous read
+		var workBuf []byte
+		if len(vr.residue) > 0 {
+			workBuf = make([]byte, len(vr.residue)+n)
+			copy(workBuf, vr.residue)
+			copy(workBuf[len(vr.residue):], p[:n])
+			vr.residue = vr.residue[:0]
+		} else {
+			workBuf = p[:n]
+		}
 
-		for i := 0; i < n-1; i += 2 {
+		// Calculate frame-aligned length
+		alignedLen := (len(workBuf) / frameSize) * frameSize
+		if alignedLen < len(workBuf) {
+			// Save incomplete frame for next read
+			vr.residue = append(vr.residue, workBuf[alignedLen:]...)
+		}
+
+		// Apply volume to aligned data
+		volume := vr.player.getEffectiveVolume()
+		for i := 0; i < alignedLen; i += 2 {
 			// Correctly reconstruct signed 16-bit little-endian sample:
 			// Use uint16 for byte concatenation to avoid sign extension issues
-			sample := int16(uint16(p[i]) | uint16(p[i+1])<<8)
+			sample := int16(uint16(workBuf[i]) | uint16(workBuf[i+1])<<8)
 			sample = int16(float64(sample) * volume)
-			p[i] = byte(sample)
-			p[i+1] = byte(sample >> 8)
+			workBuf[i] = byte(sample)
+			workBuf[i+1] = byte(sample >> 8)
+		}
+
+		// Copy aligned data back to output buffer
+		if len(vr.residue) > 0 || alignedLen != n {
+			copy(p, workBuf[:alignedLen])
+			n = alignedLen
 		}
 	}
 	return n, err
