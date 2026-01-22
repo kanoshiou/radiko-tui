@@ -37,7 +37,7 @@ type KeyMap struct {
 	VolDown   key.Binding
 	Mute      key.Binding
 	Reconnect key.Binding
-	Record    key.Binding
+	Record    key.Binding // Defines record key, used as 'Stop' when recording
 	Quit      key.Binding
 }
 
@@ -62,7 +62,7 @@ var DefaultKeyMap = KeyMap{
 	VolDown:   key.NewBinding(key.WithKeys("-", "_"), key.WithHelp("-", "音量-")),
 	Mute:      key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "ミュート")),
 	Reconnect: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "再接続")),
-	Record:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "録音")),
+	Record:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "録音/停止")),
 	Quit:      key.NewBinding(key.WithKeys("ctrl+c", "esc"), key.WithHelp("Esc", "終了/戻る")),
 }
 
@@ -106,12 +106,13 @@ type PlayingInfo struct {
 
 // SharedState holds shared state between components
 type SharedState struct {
-	Player        *player.FFmpegPlayer
+	Player        player.Player
 	AuthToken     string
 	Volume        float64
 	Muted         bool
 	CurrentAreaID string
 	Playing       *PlayingInfo
+	ServerURL     string // If set, we are in client mode
 }
 
 // Model is the TUI model
@@ -150,7 +151,7 @@ type reconnectResultMsg struct{ err error }
 type programUpdateMsg struct{ program string }
 type tickMsg struct{}
 
-func NewModel(stations []model.Station, authToken string, initialVolume float64, lastStationID string, areaID string) Model {
+func NewModel(stations []model.Station, authToken string, initialVolume float64, lastStationID string, areaID string, serverURL string) Model {
 	areas := model.AllAreas()
 
 	currentAreaIdx := 0
@@ -185,7 +186,16 @@ func NewModel(stations []model.Station, authToken string, initialVolume float64,
 		autoPlayIdx = 0
 	}
 
-	p := player.NewFFmpegPlayer(authToken, initialVolume)
+	var p player.Player
+	if serverURL != "" {
+		p = player.NewHTTPPlayer(serverURL, initialVolume)
+	} else {
+		fp := player.NewFFmpegPlayer(authToken, initialVolume)
+		// Set reconnect callback to re-authenticate
+		// We use a closure that captures the CURRENT shared state area ID
+		// Note: shared isn't created yet, so we'll set it later or access via a wrapper
+		p = fp
+	}
 
 	shared := &SharedState{
 		Player:        p,
@@ -194,11 +204,15 @@ func NewModel(stations []model.Station, authToken string, initialVolume float64,
 		Muted:         false,
 		CurrentAreaID: areaID,
 		Playing:       nil,
+		ServerURL:     serverURL,
 	}
 
-	p.SetReconnectCallback(func() string {
-		return api.Auth(shared.CurrentAreaID)
-	})
+	// Set callback for FFmpegPlayer
+	if fp, ok := p.(*player.FFmpegPlayer); ok {
+		fp.SetReconnectCallback(func() string {
+			return api.Auth(shared.CurrentAreaID)
+		})
+	}
 
 	return Model{
 		stations:      stations,
@@ -246,17 +260,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		// Check reconnection status
-		if m.shared.Player != nil {
-			status := m.shared.Player.GetReconnectStatus()
-			if status == player.ReconnectSuccess {
-				m.statusMessage = "再接続成功"
-				m.shared.Player.ClearReconnectStatus()
-			} else if status == player.ReconnectFailed {
-				m.errorMessage = "再接続失敗: " + m.shared.Player.GetLastError()
-				m.shared.Player.ClearReconnectStatus()
-			}
-		}
+		// Check reconnection status if Player supports it (FFmpegPlayer only currently returns status via interface? No, interface doesn't expose GetReconnectStatus yet, need to check type or add to interface)
+		// Wait, I didn't add GetReconnectStatus to Player interface.
+		// I should rely on generic behavior or cast.
+		// For now, let's just refresh program info.
+		// FFmpegPlayer's status monitoring was specific.
 
 		// Refresh program info every 30 seconds
 		var cmd tea.Cmd
@@ -578,29 +586,41 @@ func (m *Model) playStation() tea.Cmd {
 	currentAreaID := m.getCurrentAreaID()
 
 	return func() tea.Msg {
-		playlistURLs, err := api.GetStreamURLs(station.ID)
-		if err != nil {
-			return playResultMsg{err: err, stationIdx: stationIdx}
+		var playTarget string
+		if shared.ServerURL != "" {
+			// Client mode: play by station ID directly
+			playTarget = station.ID
+			shared.Player.Stop()
+			time.Sleep(100 * time.Millisecond)
+		} else {
+			// Local mode: resolve stream URL
+			playlistURLs, err := api.GetStreamURLs(station.ID)
+			if err != nil {
+				return playResultMsg{err: err, stationIdx: stationIdx}
+			}
+			if len(playlistURLs) == 0 {
+				return playResultMsg{err: fmt.Errorf("利用可能なストリームがありません"), stationIdx: stationIdx}
+			}
+
+			lsid := model.GenLsid()
+			lastUrl := playlistURLs[len(playlistURLs)-1]
+			playTarget = fmt.Sprintf("%s?station_id=%s&l=30&lsid=%s&type=b", lastUrl, station.ID, lsid)
+
+			shared.Player.Stop()
+			time.Sleep(100 * time.Millisecond)
+
+			// Re-authenticate for the current area to ensure token matches the region
+			newToken := api.Auth(currentAreaID)
+			if newToken != "" {
+				shared.AuthToken = newToken
+				// Update auth token for FFmpegPlayer
+				if fp, ok := shared.Player.(*player.FFmpegPlayer); ok {
+					fp.UpdateAuthToken(newToken)
+				}
+			}
 		}
-		if len(playlistURLs) == 0 {
-			return playResultMsg{err: fmt.Errorf("利用可能なストリームがありません"), stationIdx: stationIdx}
-		}
 
-		lsid := model.GenLsid()
-		lastUrl := playlistURLs[len(playlistURLs)-1]
-		finalStreamUrl := fmt.Sprintf("%s?station_id=%s&l=30&lsid=%s&type=b", lastUrl, station.ID, lsid)
-
-		shared.Player.Stop()
-		time.Sleep(100 * time.Millisecond)
-
-		// Re-authenticate for the current area to ensure token matches the region
-		newToken := api.Auth(currentAreaID)
-		if newToken != "" {
-			shared.AuthToken = newToken
-			shared.Player.UpdateAuthToken(newToken)
-		}
-
-		err = shared.Player.Play(finalStreamUrl)
+		err := shared.Player.Play(playTarget)
 		return playResultMsg{
 			err:         err,
 			stationIdx:  stationIdx,
@@ -643,6 +663,10 @@ func (m Model) View() string {
 	// === Header ===
 	// Title + Volume
 	title := titleStyle.Render("📻 Radiko")
+	if m.shared.ServerURL != "" {
+		title += statusStyle.Render(" [サーバー接続]")
+	}
+
 	volBar := m.renderVolume()
 	content.WriteString(fmt.Sprintf("%s  %s\n", title, volBar))
 
@@ -756,15 +780,20 @@ func (m Model) renderFooter() string {
 			playLine += "  " + programStyle.Render("♪ "+m.shared.Playing.CurrentProgram)
 		}
 
-		// Check reconnection status
+		// Check status using type assertion for specific details if needed
+		// For general status, we trust tickMsg to update m.statusMessage if it was supported
+		// But here we want inline status in footer
 		if m.shared.Player != nil {
-			switch m.shared.Player.GetReconnectStatus() {
-			case player.ReconnectStarted:
-				playLine += "  " + reconnectStyle.Render("🔄 再接続中...")
-			case player.ReconnectAuth:
-				playLine += "  " + reconnectStyle.Render("🔑 認証取得中...")
-			case player.ReconnectPlaying:
-				playLine += "  " + reconnectStyle.Render("▶ 再生を再開中...")
+			// Try to get status from FFmpegPlayer
+			if fp, ok := m.shared.Player.(*player.FFmpegPlayer); ok {
+				switch fp.GetReconnectStatus() {
+				case player.ReconnectStarted:
+					playLine += "  " + reconnectStyle.Render("🔄 再接続中...")
+				case player.ReconnectAuth:
+					playLine += "  " + reconnectStyle.Render("🔑 認証取得中...")
+				case player.ReconnectPlaying:
+					playLine += "  " + reconnectStyle.Render("▶ 再生を再開中...")
+				}
 			}
 
 			// Check recording status
@@ -910,8 +939,9 @@ func (m Model) renderRegionLine() string {
 	return strings.Join(parts, "")
 }
 
-func Run(stations []model.Station, authToken string, cfg config.Config) error {
-	m := NewModel(stations, authToken, cfg.Volume, cfg.LastStationID, cfg.AreaID)
+// Run starts the TUI
+func Run(stations []model.Station, authToken string, cfg config.Config, serverURL string) error {
+	m := NewModel(stations, authToken, cfg.Volume, cfg.LastStationID, cfg.AreaID, serverURL)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 

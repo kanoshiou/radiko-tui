@@ -14,7 +14,8 @@ A Terminal User Interface (TUI) for streaming Radiko Japanese internet radio, wr
 - 🎵 Stream live Radiko radio stations
 - 🗾 Support for all 47 Japanese prefectures
 - 🖥️ Interactive terminal UI (TUI)
-- 🌐 Server mode for HTTP streaming
+- 🌐 Server mode for HTTP streaming (AAC/PCM)
+- 🔌 Client mode to connect to remote server (no local ffmpeg)
 - 🔊 Volume control with mute support
 - ⏺️ Record streams to AAC files
 - 🔄 Auto-reconnect on stream failure
@@ -63,6 +64,16 @@ go build -tags noaudio -o radiko-server
 ```
 
 This build excludes audio playback dependencies (oto) and only supports server mode (`-server` flag).
+
+### Build with Default Server URL
+
+You can specify a default server URL at build time, so clients don't need to provide `-server-url` every time:
+
+```bash
+go build -ldflags "-X main.defaultServerURL=http://your-server-ip:8080" -o radiko-tui
+```
+
+Note: If `--server-url` is provided at runtime, it takes precedence over the built-in default.
 
 ### Docker (Recommended for Server Mode)
 
@@ -122,6 +133,17 @@ brew install ffmpeg
 ./radiko-tui
 ```
 
+### Client Mode (No ffmpeg required)
+
+Connect to a running radiko-tui server:
+
+```bash
+./radiko-tui -server-url http://192.168.1.100:8080
+```
+
+In this mode, audio decoding is handled internally. **No local ffmpeg installation is required on the client.** All TUI
+features (volume, region switching) are supported.
+
 ### Server Mode
 
 Run as an HTTP streaming server:
@@ -157,10 +179,11 @@ Example with custom grace period:
 
 #### Server API Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/play/{stationID}` | Stream audio from the specified station |
-| `GET /api/status` | Get JSON status of active streams |
+| Endpoint                        | Description                              |
+|---------------------------------|------------------------------------------|
+| `GET /api/play/{stationID}`     | Stream audio (AAC) for VLC/Browser       |
+| `GET /api/play/{stationID}/pcm` | Stream audio (PCM) for radiko-tui client |
+| `GET /api/status`               | Get JSON status of active streams        |
 
 ### Controls
 

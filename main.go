@@ -11,12 +11,18 @@ import (
 	"radiko-tui/tui"
 )
 
+// defaultServerURL can be set at build time via -ldflags "-X main.defaultServerURL=http://..."
+var defaultServerURL string
+
 func main() {
 	// Parse command line arguments
 	volumePercent := flag.Int("volume", -1, "Initial volume (0-100), -1 means use saved config")
 	serverMode := flag.Bool("server", false, "Run in server mode (HTTP streaming)")
 	port := flag.Int("port", 8080, "Server port (server mode only)")
 	graceSeconds := flag.Int("grace", 10, "Seconds to keep ffmpeg alive after last client disconnects (server mode only)")
+
+	// Use build-time default if available
+	serverURL := flag.String("server-url", defaultServerURL, "Connect to remote server (client mode, no local ffmpeg needed)")
 	flag.Parse()
 
 	// Server mode
@@ -25,8 +31,14 @@ func main() {
 		return
 	}
 
-	// TUI mode
-	runTUI(*volumePercent)
+	// Client mode (connect to remote server)
+	if *serverURL != "" {
+		runTUI(*volumePercent, *serverURL)
+		return
+	}
+
+	// Normal TUI mode (local ffmpeg)
+	runTUI(*volumePercent, "")
 }
 
 // runServer starts the HTTP streaming server
@@ -39,8 +51,8 @@ func runServer(port int, graceSeconds int) {
 	}
 }
 
-// runTUI starts the terminal UI mode
-func runTUI(volumePercent int) {
+// runTUI starts the terminal UI mode (local or client)
+func runTUI(volumePercent int, serverURL string) {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -58,10 +70,15 @@ func runTUI(volumePercent int) {
 		}
 	}
 
-	// Get authentication token
-	fmt.Println("🔐 認証中...")
-	authToken := api.Auth(cfg.AreaID)
-	fmt.Println("✓ 認証成功")
+	var authToken string
+	if serverURL == "" {
+		// Get authentication token (Local mode only)
+		fmt.Println("🔐 認証中...")
+		authToken = api.Auth(cfg.AreaID)
+		fmt.Println("✓ 認証成功")
+	} else {
+		fmt.Printf("🔗 サーバーに接続: %s\n", serverURL)
+	}
 
 	// Get station list
 	fmt.Printf("📡 %s 地域の放送局リストを取得中...\n", cfg.AreaID)
@@ -84,10 +101,9 @@ func runTUI(volumePercent int) {
 
 	// Run TUI
 	fmt.Println("🚀 インターフェースを起動中...")
-	err = tui.Run(stations, authToken, cfg)
+	err = tui.Run(stations, authToken, cfg, serverURL)
 	if err != nil {
 		fmt.Printf("❌ インターフェースエラー: %v\n", err)
 		os.Exit(1)
 	}
 }
-

@@ -14,7 +14,8 @@
 - 🎵 实时播放 Radiko 电台
 - 🗾 支持日本全部 47 个都道府县
 - 🖥️ 交互式终端界面 (TUI)
-- 🌐 服务器模式支持 HTTP 流媒体
+- 🌐 服务器模式支持 HTTP 流媒体（AAC/PCM）
+- 🔌 客户端模式，连接远程服务器（无需本地 ffmpeg）
 - 🔊 音量控制，支持静音
 - ⏺️ 录制流媒体为 AAC 文件
 - 🔄 流媒体中断时自动重连
@@ -63,6 +64,16 @@ go build -tags noaudio -o radiko-server
 ```
 
 此构建排除音频播放依赖（oto），仅支持服务器模式（`-server` 参数）。
+
+### 预设服务器地址构建
+
+可以在编译时指定默认服务器地址，这样客户端运行时无需每次都输入 `-server-url`：
+
+```bash
+go build -ldflags "-X main.defaultServerURL=http://your-server-ip:8080" -o radiko-tui
+```
+
+注意：运行时如果指定了 `--server-url` 参数，其优先级高于编译时预设的地址。
 
 ### Docker（推荐用于服务器模式）
 
@@ -122,6 +133,16 @@ brew install ffmpeg
 ./radiko-tui
 ```
 
+### 客户端模式（无需 ffmpeg）
+
+连接到运行中的 radiko-tui 服务器：
+
+```bash
+./radiko-tui -server-url http://192.168.1.100:8080
+```
+
+此模式下，音频解码在 TUI 内部处理，**客户端无需安装 ffmpeg**。所有 TUI 功能（音量、地域切换等）均可使用。
+
 ### 服务器模式
 
 作为 HTTP 流媒体服务器运行：
@@ -157,10 +178,11 @@ vlc http://localhost:8080/api/play/QRR
 
 #### 服务器 API 端点
 
-| 端点 | 说明 |
-|------|------|
-| `GET /api/play/{stationID}` | 流式传输指定电台的音频 |
-| `GET /api/status` | 获取活动流的 JSON 状态 |
+| 端点                              | 说明                                |
+|---------------------------------|-----------------------------------|
+| `GET /api/play/{stationID}`     | 流式传输指定电台 (AAC)，适用于 VLC/浏览器        |
+| `GET /api/play/{stationID}/pcm` | 流式传输指定电台 (PCM)，适用于 radiko-tui 客户端 |
+| `GET /api/status`               | 获取活动流的 JSON 状态                    |
 
 ### 快捷键
 
