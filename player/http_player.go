@@ -3,7 +3,6 @@
 package player
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -121,13 +120,9 @@ func (p *HTTPPlayer) initAudio(sampleRate, channelCount int) error {
 }
 
 func (p *HTTPPlayer) pumpAudio(reader io.Reader) {
-	// Use a buffered reader to absorb network jitter (64KB buffer)
-	bufferedReader := bufio.NewReaderSize(reader, 65536)
-
 	volumeReader := &HTTPVolumeReader{
-		reader:  bufferedReader,
-		player:  p,
-		residue: make([]byte, 0, 4),
+		reader: reader,
+		player: p,
 	}
 
 	p.otoPlayer = p.otoContext.NewPlayer(volumeReader)
@@ -140,46 +135,53 @@ func (p *HTTPPlayer) pumpAudio(reader io.Reader) {
 type HTTPVolumeReader struct {
 	reader  io.Reader
 	player  *HTTPPlayer
-	residue []byte // Buffer for incomplete PCM frames (max 3 bytes)
+	residue []byte // Buffer for incomplete PCM frames
 }
 
 func (vr *HTTPVolumeReader) Read(p []byte) (n int, err error) {
 	// PCM frame size: 2 bytes per sample * 2 channels = 4 bytes per frame
 	const frameSize = 4
 
-	// If we have residue, prepend it
-	offset := 0
-	if len(vr.residue) > 0 {
-		offset = copy(p, vr.residue)
-		vr.residue = vr.residue[:0]
-	}
-
-	// Read from network into the buffer after residue
-	n, err = vr.reader.Read(p[offset:])
-	n += offset
-
+	// Read data from network
+	n, err = vr.reader.Read(p)
 	if n > 0 {
 		vr.player.mu.Lock()
 		vr.player.lastDataTime = time.Now()
 		vr.player.mu.Unlock()
 
-		// Ensure frame alignment
-		alignedLen := (n / frameSize) * frameSize
-		if alignedLen < n {
-			// Save incomplete bytes for next read
-			vr.residue = append(vr.residue, p[alignedLen:n]...)
-			n = alignedLen
+		// Combine with any residue from previous read
+		var workBuf []byte
+		if len(vr.residue) > 0 {
+			workBuf = make([]byte, len(vr.residue)+n)
+			copy(workBuf, vr.residue)
+			copy(workBuf[len(vr.residue):], p[:n])
+			vr.residue = vr.residue[:0]
+		} else {
+			workBuf = p[:n]
 		}
 
-		// Apply volume to aligned data only
-		if n > 0 {
-			volume := vr.player.getEffectiveVolume()
-			for i := 0; i < n; i += 2 {
-				sample := int16(uint16(p[i]) | uint16(p[i+1])<<8)
-				sample = int16(float64(sample) * volume)
-				p[i] = byte(sample)
-				p[i+1] = byte(sample >> 8)
-			}
+		// Calculate frame-aligned length
+		alignedLen := (len(workBuf) / frameSize) * frameSize
+		if alignedLen < len(workBuf) {
+			// Save incomplete frame for next read
+			vr.residue = append(vr.residue, workBuf[alignedLen:]...)
+		}
+
+		// Apply volume to aligned data
+		volume := vr.player.getEffectiveVolume()
+		for i := 0; i < alignedLen; i += 2 {
+			// Correctly reconstruct signed 16-bit little-endian sample:
+			// Use uint16 for byte concatenation to avoid sign extension issues
+			sample := int16(uint16(workBuf[i]) | uint16(workBuf[i+1])<<8)
+			sample = int16(float64(sample) * volume)
+			workBuf[i] = byte(sample)
+			workBuf[i+1] = byte(sample >> 8)
+		}
+
+		// Copy aligned data back to output buffer
+		if len(vr.residue) > 0 || alignedLen != n {
+			copy(p, workBuf[:alignedLen])
+			n = alignedLen
 		}
 	}
 	return n, err
