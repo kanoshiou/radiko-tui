@@ -147,7 +147,9 @@ func (vr *HTTPVolumeReader) Read(p []byte) (n int, err error) {
 		volume := vr.player.getEffectiveVolume()
 
 		for i := 0; i < n-1; i += 2 {
-			sample := int16(p[i]) | int16(p[i+1])<<8
+			// Correctly reconstruct signed 16-bit little-endian sample:
+			// Use uint16 for byte concatenation to avoid sign extension issues
+			sample := int16(uint16(p[i]) | uint16(p[i+1])<<8)
 			sample = int16(float64(sample) * volume)
 			p[i] = byte(sample)
 			p[i+1] = byte(sample >> 8)

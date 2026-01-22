@@ -699,7 +699,7 @@ func NewPCMStationStream(stationID string, graceSeconds int, onClose func()) (*P
 		clients:      make(map[string]*Client),
 		graceSeconds: graceSeconds,
 		onClose:      onClose,
-		broadcast:    make(chan []byte, 100),
+		broadcast:    make(chan []byte, 500),
 	}
 
 	// Start ffmpeg with PCM output
@@ -728,7 +728,7 @@ func (ps *PCMStationStream) startFFmpegPCM(streamURL, authToken string) error {
 		"-ac", "2",
 		"-fflags", "+nobuffer+flush_packets",
 		"-flags", "low_delay",
-		"-loglevel", "warning",
+		"-loglevel", "error",
 		"pipe:1",
 	)
 
@@ -773,7 +773,10 @@ func (ps *PCMStationStream) startFFmpegPCM(streamURL, authToken string) error {
 // readAndBroadcast reads from ffmpeg stdout and sends to broadcast channel
 func (ps *PCMStationStream) readAndBroadcast(stdout io.Reader) {
 	reader := bufio.NewReaderSize(stdout, 32768)
+	// PCM frame size: 2 bytes per sample * 2 channels = 4 bytes per frame
+	const frameSize = 4
 	buf := make([]byte, 8192)
+	residue := make([]byte, 0, frameSize) // Buffer for incomplete frames
 	firstData := true
 
 	for {
@@ -784,20 +787,40 @@ func (ps *PCMStationStream) readAndBroadcast(stdout io.Reader) {
 				firstData = false
 			}
 
-			// Copy data to avoid race conditions
-			data := make([]byte, n)
-			copy(data, buf[:n])
+			// Combine residue from previous read with new data
+			var dataToSend []byte
+			if len(residue) > 0 {
+				dataToSend = make([]byte, len(residue)+n)
+				copy(dataToSend, residue)
+				copy(dataToSend[len(residue):], buf[:n])
+				residue = residue[:0]
+			} else {
+				dataToSend = buf[:n]
+			}
 
-			// Non-blocking send to broadcast channel
-			select {
-			case ps.broadcast <- data:
-			default:
-				// Channel full, drop oldest data
+			// Ensure we only send frame-aligned data (multiple of 4 bytes)
+			alignedLen := (len(dataToSend) / frameSize) * frameSize
+			if alignedLen < len(dataToSend) {
+				// Save incomplete frame for next iteration
+				residue = append(residue, dataToSend[alignedLen:]...)
+			}
+
+			if alignedLen > 0 {
+				// Copy aligned data to avoid race conditions
+				data := make([]byte, alignedLen)
+				copy(data, dataToSend[:alignedLen])
+
+				// Non-blocking send to broadcast channel
 				select {
-				case <-ps.broadcast:
+				case ps.broadcast <- data:
 				default:
+					// Channel full, drop oldest data
+					select {
+					case <-ps.broadcast:
+					default:
+					}
+					ps.broadcast <- data
 				}
-				ps.broadcast <- data
 			}
 		}
 
